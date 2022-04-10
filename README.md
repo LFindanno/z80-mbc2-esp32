@@ -1,8 +1,8 @@
 # z80-mbc2-esp32
 A Z80 CPU board with an ESP32 as SPI slave peripheral
 
-The purpose of this project is to connect an ESP32 to a Z80 system. The ESP32 module highlights are: 32bit CPU, bluetooth and wifi connectivity.
-The project is based around the well knowed Z80-MBC2 board https://j4f.info/z80-mbc2. In the original project, the SD_MOD slot allow to connect an SD card module and it's effectively the SPI port of the ATMEGA32 uC. This project use this port to connect the ATMEGA32A (SPI master) to the HSPI port of an ESP32 board (SPI slave). The SD card module is moved to a second SPI port of the ESP32.
+The purpose of this project is to connect an ESP32 module to a Z80 system. ESP32 module highlights: 32bit CPU, bluetooth and wifi connectivity.
+The project is based around the well knowed Z80-MBC2 board https://j4f.info/z80-mbc2. In the original project, the SD_MOD slot allow the connection of an SD card module, effectively it's the SPI port of the ATMEGA32 uC. This project use this port to connect the ATMEGA32A (SPI master) to the HSPI port of an ESP32 board (SPI slave). The SD card module is moved to a second SPI port of the ESP32.
 
 This project is still is in a very early stage! It needs a lot of work.
 
