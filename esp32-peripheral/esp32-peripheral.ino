@@ -206,6 +206,11 @@ void loop() {
          spi_slave_tx_buf[0] = e;
          spi_slave_tx_buf[1] = n;
        break;
+
+       case 0x18:
+         // remote closefile
+         file.close();
+       break;
     }
     
   }

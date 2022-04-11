@@ -673,6 +673,7 @@ void setup()
       }
     }
     while (errCodeSD);
+    closeFile();
   }
   else
   // Load from flash
@@ -2105,6 +2106,13 @@ byte seekSD(word sectNum)
   return r;
 }
 
+void closeFile(){
+  digitalWrite(SS_, LOW);
+  SPI.transfer(0x18);
+  delay(1);
+  digitalWrite(SS_, HIGH);
+  
+}
 // ------------------------------------------------------------------------------
 
 void printErrSD(byte opType, byte errCode, const char* fileName)
