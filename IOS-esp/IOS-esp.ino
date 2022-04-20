@@ -338,8 +338,15 @@ void setup()
   // Initialize CLK (single clock pulses mode) and reset the Z80 CPU
   pinMode(CLK, OUTPUT);                           // Set CLK as output
   
-  singlePulsesResetZ80();                         // Reset the Z80 CPU using single clock pulses
+  singlePulsesResetZ80();    // Reset the Z80 CPU using single clock pulses
 
+  // Initialize SPI part 1
+  pinMode(SS_, OUTPUT);
+  pinMode(MISO, OUTPUT);
+  digitalWrite(SS_, LOW);
+  digitalWrite(MISO, LOW);
+  
+  
   // Initialize MCU_RTS and MCU_CTS and reset uTerm (A071218-R250119) if present
   pinMode(MCU_CTS_, INPUT_PULLUP);                // Parked (not used)
   pinMode(MCU_RTS_, OUTPUT);
@@ -347,6 +354,13 @@ void setup()
   delay(100); 
   digitalWrite(MCU_RTS_, HIGH); 
   delay(500);
+
+  // Initialize SPI part 2
+  digitalWrite(MISO, LOW);
+  digitalWrite(SS_, HIGH);
+  pinMode(MISO, INPUT);
+  SPI.begin();
+  SPI.setDataMode(SPI_MODE0);
 
   // Read the Z80 CPU speed mode
   if (EEPROM.read(clockModeAddr) > 1)             // Check if it is a valid value, otherwise set it to low speed
@@ -363,8 +377,6 @@ void setup()
     EEPROM.update(diskSetAddr, 0);
     diskSet =0;
   }
-  syncVariable(SYNC_DISKSET, diskSet);
-  
 
   // Initialize the EXP_PORT (I2C) and search for "known" optional modules
   Wire.begin();                                   // Wake up I2C bus
@@ -394,17 +406,14 @@ void setup()
   autoexecFlag = EEPROM.read(autoexecFlagAddr);   // Read the previous stored AUTOEXEC flag
   if (autoexecFlag) Serial.println("ON");
   else Serial.println("OFF");
-  syncVariable(SYNC_AUTOEXECFLAG, autoexecFlag);
-
+  
   // ----------------------------------------
   // BOOT SELECTION AND SYS PARAMETERS MENU
   // ----------------------------------------
 
   // Boot selection and system parameters menu if requested
-  //-----------------REMOTIZE MODIFY!!!!
-  mountSD(); mountSD();       // Try to muont the SD volume
+  //mountSD();       // Try to muont the SD volume
   bootMode = EEPROM.read(bootModeAddr);           // Read the previous stored boot mode
-  syncVariable(SYNC_BOOTMODE, bootMode); 
   if ((bootSelection == 1 ) || (bootMode > maxBootMode))
   // Enter in the boot selection menu if USER key was pressed at startup 
   //   or an invalid bootMode code was read from internal EEPROM
@@ -475,7 +484,6 @@ void setup()
       case '7':                                   // Toggle CP/M AUTOEXEC execution on cold boot
         autoexecFlag = !autoexecFlag;             // Toggle AUTOEXEC executiont status
         EEPROM.update(autoexecFlagAddr, autoexecFlag); // Save it to the internal EEPROM
-        syncVariable(SYNC_AUTOEXECFLAG, autoexecFlag);
       break;
 
       case '8':                                   // Change current Disk Set
@@ -501,7 +509,6 @@ void setup()
            EEPROM.update(diskSetAddr, iCount);
            
         }
-        syncVariable(SYNC_DISKSET, diskSet);
       break;
 
       case '9':                                   // Change RTC Date/Time
@@ -513,7 +520,6 @@ void setup()
     bootMode = inChar - '1';                      // Calculate bootMode from inChar
     if (bootMode <= maxBootMode) EEPROM.update(bootModeAddr, bootMode); // Save to the internal EEPROM if required
     else bootMode = EEPROM.read(bootModeAddr);    // Reload boot mode if '0' or > '5' choice selected
-    syncVariable(SYNC_BOOTMODE, bootMode);
   }
 
   // Print current Disk Set and OS name (if OS boot is enabled)
@@ -573,7 +579,7 @@ void setup()
       BootStrAddr = boot_A_StrAddr;
     break;
   }
-  syncBootMode(bootMode);
+  
   digitalWrite(WAIT_RES_, HIGH);                  // Set WAIT_RES_ HIGH (Led LED_0 ON)
   
   // Load a JP instruction if the boot program starting addr is > 0x0000
@@ -608,11 +614,18 @@ void setup()
   }
   // DEBUG END ------------------------------
   //
+  
+  syncVariable(SYNC_DISKSET, diskSet);
+  syncVariable(SYNC_AUTOEXECFLAG, autoexecFlag);
+  syncVariable(SYNC_BOOTMODE, bootMode);
+  syncBootMode(bootMode);
+  delay(100);
+  
   if (bootMode < maxBootMode)
   // Load from SD
   {
     // Mount a volume on SD
-    if (mountSD()) //----------------------possible errors in the condition 
+    if (mountSD())  
     // Error mounting. Try again
     {
       errCodeSD = mountSD();
@@ -651,28 +664,36 @@ void setup()
     Serial.print("IOS: Loading boot program (");
     Serial.print(fileNameSD);
     Serial.print(")...");
-    do
+    //do
     // If an error occurs repeat until error disappears (or the user forces a reset)
-    {
+    //{
+      
       do
       // Read a "segment" of a SD sector and load it into RAM
       {
+        numReadBytes = 32;
         errCodeSD = readSD(bufferSD, &numReadBytes);  // Read current "segment" (32 bytes) of the current SD serctor
         for (iCount = 0; iCount < numReadBytes; iCount++)
         // Load the read "segment" into RAM
         {
+          
           loadByteToRAM(bufferSD[iCount]);        // Write current data byte into RAM
+          //Serial.print(bufferSD[iCount]); Serial.print(" ");
         }
+        //Serial.println("");
+        //Serial.print("Record len: ");Serial.println(numReadBytes);
       }
-      while ((numReadBytes == 32) && (!errCodeSD));   // If numReadBytes < 32 -> EOF reached
+      while (numReadBytes > 0);   // If numReadBytes < 32 -> EOF reached
+      /*
       if (errCodeSD)
       {
         printErrSD(2, errCodeSD, fileNameSD);
         waitKey();                                // Wait a key to repeat
         seekSD(0);                                // Reset the sector pointer
       }
-    }
-    while (errCodeSD);
+      */
+    //}
+    //while (errCodeSD);
     closeFile();
   }
   else
@@ -956,7 +977,7 @@ void loop()
           SPI.transfer(ioData);
           delay(1);
           digitalWrite(SS_, HIGH);
-          delay(1);
+          delay(50);
 
           if (ioData <= maxDiskNum)               // Valid disk number
           // Set the name of the file to open as virtual disk, and open it
@@ -1189,7 +1210,14 @@ void loop()
             break;  
           }
         break;
-        
+
+        case 0x10:
+          digitalWrite(SS_, LOW);
+          SPI.transfer(0x10);
+          SPI.transfer(ioData);
+          delay(1);
+          digitalWrite(SS_, HIGH);          
+        break;
         }
         if ((ioOpcode != 0x0A) && (ioOpcode != 0x0C)) ioOpcode = 0xFF;    // All done for the single byte opcodes. 
                                                                           //  Set ioOpcode = "No operation"
@@ -1410,7 +1438,8 @@ void loop()
             // NOTE 3: ERRDISK must not be used to read the resulting error code after a SDMOUNT operation 
             //         (see the SDMOUNT opcode)
              
-            ioData = diskErr;
+            //ioData = diskErr;
+            ioData = 0;
           break;
 
           case  0x86:
@@ -2020,11 +2049,19 @@ void singlePulsesResetZ80()
 
 
 byte mountSD(){
-  byte r;
+  byte r = 0;
   digitalWrite(SS_, LOW);
-  r=SPI.transfer(0x13);
+  SPI.transfer(0x13);
   delay(1);
+  digitalWrite(SS_, HIGH);
+  // read result of mount
+  delay(100);
   digitalWrite(SS_, LOW);
+  r = SPI.transfer(0xFF);
+  delay(1);
+  digitalWrite(SS_, HIGH);
+  //Serial.print("Mount: ");Serial.println(r);
+  delay(50);
   return r;
 }
 
@@ -2034,9 +2071,17 @@ byte openSD(const char* fileName)
 {
   byte r;
   digitalWrite(SS_, LOW);
-  r=SPI.transfer(0x14);
+  SPI.transfer(0x14);
   delay(1);
+  digitalWrite(SS_, HIGH);
+  delay(50);
+  
   digitalWrite(SS_, LOW);
+  r = SPI.transfer(0xFF);
+  delay(1);
+  digitalWrite(SS_, HIGH);
+  //Serial.print("Open: ");Serial.println(r);
+  delay(50);
   return r;
 }
 
@@ -2044,23 +2089,21 @@ byte openSD(const char* fileName)
 
 byte readSD(byte* buffSD, byte* numReadBytes)
 {
-  byte e, s;
+  byte s;
   digitalWrite(SS_, LOW);
-  SPI.transfer(0x15);
+  SPI.transfer(0x15); // send the read request
   delay(1);
   digitalWrite(SS_, HIGH);
-  delay(1);
-  // now read the buffer
-  digitalWrite(SS_, LOW);
-  e = SPI.transfer(0xFF);
-  s = SPI.transfer(0xFF);
-  for (int i = 0; i < 32; i++){
-    *(buffSD + i) = SPI.transfer(0xFF);
+  delay(50);
+  digitalWrite(SS_, LOW); // read result and data
+  *numReadBytes = SPI.transfer(0xFF); // n read bytes
+  s = SPI.transfer(0xFF);             // error code 
+  for (byte i = 0; i < *numReadBytes; i++){
+    buffSD[i] = SPI.transfer(0xFF);
   }
   delay(1);
   digitalWrite(SS_, HIGH);
-  
-  return e;
+  return s;
 }
 
 // ------------------------------------------------------------------------------
@@ -2069,20 +2112,19 @@ byte writeSD(byte* buffSD, byte* numWrittenBytes)
 {
   byte e;
   digitalWrite(SS_, LOW);
-  SPI.transfer(0x17);
+  SPI.transfer(0x17);          // write request
   for (int i=0; i < 32; i++){
-    SPI.transfer(*(buffSD + i));
+    SPI.transfer(buffSD[i]);
   }
   delay(1);
   digitalWrite(SS_, HIGH);
 
-  delay(1);// now read the result
+  delay(50);// now read the result
   digitalWrite(SS_, LOW);
-  e = SPI.transfer(0xFF);
   *numWrittenBytes = SPI.transfer(0xFF);
+  e = SPI.transfer(0xFF);
   delay(1);
   digitalWrite(SS_, HIGH);
-
   return e;
 }
 
@@ -2098,7 +2140,7 @@ byte seekSD(word sectNum)
   delay(1);
   digitalWrite(SS_, HIGH);
 
-  delay(1);// now read the result
+  delay(50);// now read the result
   digitalWrite(SS_, LOW);
   r = SPI.transfer(0xFF);
   delay(1);
@@ -2111,7 +2153,7 @@ void closeFile(){
   SPI.transfer(0x18);
   delay(1);
   digitalWrite(SS_, HIGH);
-  
+  delay(50);
 }
 // ------------------------------------------------------------------------------
 
@@ -2218,13 +2260,13 @@ void printOsName(byte currentDiskSet)
   Serial.print("Disk Set ");
   Serial.print(currentDiskSet);
   OsName[2] = currentDiskSet + 48;    // Set the Disk Set
-  openSD(OsName);                     // Open file with the OS name
-  readSD(bufferSD, &numReadBytes);    // Read the OS name
+  //openSD(OsName);                     // Open file with the OS name
+  //readSD(bufferSD, &numReadBytes);    // Read the OS name
   if (numReadBytes > 0)
   // Print the OS name
   {
     Serial.print(" (");
-    Serial.print((const char *)bufferSD);
+    //Serial.print((const char *)bufferSD);
     Serial.print(")");
   }
 }
@@ -2234,7 +2276,9 @@ void syncVariable(byte var, byte value){
   SPI.transfer(0x11);    // opcode to esp32
   SPI.transfer(var);
   SPI.transfer(value);
+  delay(1);
   digitalWrite(SS_, HIGH);
+  delay(50);
 }
 
 void syncBootMode(byte value){
@@ -2243,5 +2287,5 @@ void syncBootMode(byte value){
   SPI.transfer(value);
   delay(1);
   digitalWrite(SS_, HIGH);
- 
+  delay(50);
 }
